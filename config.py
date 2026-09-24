@@ -1,9 +1,19 @@
 APP_TITLE = "Credit Card Statement Analyser"
+
 APP_ICON = "💳"
 
-SUPPORTED_FILE_TYPES = ["csv", "pdf"]
+SUPPORTED_FILE_TYPES = [
+    "csv",
+    "pdf"
+]
 
 DEFAULT_CURRENCY = "INR"
+
+REQUIRED_COLUMNS = [
+    "Date",
+    "Merchant",
+    "Amount"
+]
 
 CATEGORIES = [
     "Food",
@@ -16,12 +26,6 @@ CATEGORIES = [
     "Other"
 ]
 
-REQUIRED_COLUMNS = [
-    "Date",
-    "Merchant",
-    "Amount"
-]
-
 CATEGORY_KEYWORDS = {
 
     "Food": [
@@ -30,42 +34,31 @@ CATEGORY_KEYWORDS = {
         "dominos",
         "pizza",
         "restaurant",
-        "food",
-        "cafe",
-        "kfc",
-        "mcdonald"
+        "food"
     ],
 
     "Shopping": [
         "amazon",
-        "amzn",
         "flipkart",
         "myntra",
-        "shopping",
-        "mall",
-        "retail"
+        "shopping"
     ],
 
     "Travel": [
         "uber",
         "ola",
-        "flight",
-        "airlines",
-        "irctc",
-        "travel",
         "hotel",
         "booking",
-        "makemytrip"
+        "flight",
+        "travel"
     ],
 
     "Entertainment": [
         "netflix",
         "spotify",
-        "movie",
-        "cinema",
-        "youtube",
-        "prime",
-        "bookmyshow"
+        "prime video",
+        "bookmyshow",
+        "movie"
     ],
 
     "Bills": [
@@ -74,23 +67,20 @@ CATEGORY_KEYWORDS = {
         "electricity",
         "mobile",
         "internet",
-        "water",
         "bill"
     ],
 
     "Health": [
-        "hospital",
+        "apollo",
         "pharmacy",
-        "medical",
-        "clinic",
-        "apollo"
+        "hospital",
+        "medical"
     ],
 
     "Education": [
-        "college",
-        "course",
         "udemy",
         "coursera",
-        "books"
+        "course",
+        "education"
     ]
 }
