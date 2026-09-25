@@ -10,10 +10,6 @@ from dashboard import display_dashboard
 from database import insert_transactions
 
 
-# =========================================================
-# PAGE CONFIGURATION
-# =========================================================
-
 st.set_page_config(
     page_title=APP_TITLE,
     page_icon=APP_ICON,
@@ -21,15 +17,7 @@ st.set_page_config(
 )
 
 
-# =========================================================
-# MAIN APPLICATION
-# =========================================================
-
 def main():
-
-    # =====================================================
-    # HEADER
-    # =====================================================
 
     st.title("💳 Credit Card Statement Analyser")
 
@@ -47,8 +35,8 @@ def main():
     st.subheader("📄 Try with a Sample CSV")
 
     st.write(
-        "New to the application? Download the sample CSV "
-        "to understand the required transaction format."
+        "Download the sample CSV to understand the required "
+        "transaction format."
     )
 
     sample_csv = """Date,Merchant,Amount,Currency,Markup
@@ -85,13 +73,9 @@ def main():
     with col2:
 
         st.caption(
-            "Download the sample, edit it in Excel if required, "
-            "and upload it below."
+            "Download the sample, open it in Excel, "
+            "edit the transactions if needed, and upload it below."
         )
-
-    # =====================================================
-    # VIEW SAMPLE DATA
-    # =====================================================
 
     with st.expander("👀 View Sample Data"):
 
@@ -119,10 +103,6 @@ def main():
         help="Supported formats: CSV and PDF"
     )
 
-    # =====================================================
-    # NO FILE SELECTED
-    # =====================================================
-
     if uploaded_file is None:
 
         st.info(
@@ -131,17 +111,9 @@ def main():
 
         return
 
-    # =====================================================
-    # FILE SELECTED
-    # =====================================================
-
     st.success(
         f"📄 File selected: **{uploaded_file.name}**"
     )
-
-    # =====================================================
-    # ANALYSE BUTTON
-    # =====================================================
 
     analyse_button = st.button(
         "🚀 Analyse Statement",
@@ -152,15 +124,11 @@ def main():
     if not analyse_button:
         return
 
-    # =====================================================
-    # PROCESS STATEMENT
-    # =====================================================
-
     try:
 
-        # -------------------------------------------------
-        # READ STATEMENT
-        # -------------------------------------------------
+        # =================================================
+        # READ FILE
+        # =================================================
 
         with st.spinner("📖 Reading statement..."):
 
@@ -176,17 +144,28 @@ def main():
 
             return
 
-        # -------------------------------------------------
+        # TEMPORARY DEBUG INFORMATION
+        st.subheader("🔍 Processing Check")
+
+        st.write(
+            f"**Rows read from uploaded file: {len(df)}**"
+        )
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # =================================================
         # CLEAN DATA
-        # -------------------------------------------------
+        # =================================================
 
         with st.spinner("🧹 Processing transaction data..."):
 
-            df = clean_data(
-                df
-            )
+            df = clean_data(df)
 
-        if df.empty:
+        if df is None or df.empty:
 
             st.error(
                 "❌ No valid transactions remain after processing."
@@ -194,27 +173,34 @@ def main():
 
             return
 
-        # -------------------------------------------------
-        # CATEGORISE TRANSACTIONS
-        # -------------------------------------------------
+        # TEMPORARY DEBUG INFORMATION
+        st.write(
+            f"**Rows after cleaning: {len(df)}**"
+        )
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # =================================================
+        # CATEGORISE
+        # =================================================
 
         with st.spinner("🏷️ Analysing transactions..."):
 
-            df = categorise_transactions(
-                df
-            )
+            df = categorise_transactions(df)
 
-        # -------------------------------------------------
-        # SAVE TO MYSQL
-        # -------------------------------------------------
+        # =================================================
+        # SAVE TO DATABASE
+        # =================================================
 
         with st.spinner("🗄️ Saving data..."):
 
             try:
 
-                insert_transactions(
-                    df
-                )
+                insert_transactions(df)
 
             except Exception as database_error:
 
@@ -226,19 +212,13 @@ def main():
                     f"MySQL message: {database_error}"
                 )
 
-        # -------------------------------------------------
-        # DISPLAY DASHBOARD
-        # -------------------------------------------------
+        # =================================================
+        # DASHBOARD
+        # =================================================
 
         st.divider()
 
-        display_dashboard(
-            df
-        )
-
-    # =====================================================
-    # ERROR HANDLING
-    # =====================================================
+        display_dashboard(df)
 
     except Exception as e:
 
@@ -248,10 +228,6 @@ def main():
 
         st.exception(e)
 
-
-# =========================================================
-# RUN APPLICATION
-# =========================================================
 
 if __name__ == "__main__":
     main()

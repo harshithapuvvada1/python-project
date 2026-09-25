@@ -1,12 +1,11 @@
 import re
-
 import pandas as pd
 
 from config import REQUIRED_COLUMNS
 
 
 # =========================================================
-# COLUMN CLEANING
+# CLEAN COLUMN NAMES
 # =========================================================
 
 def clean_column_names(df):
@@ -22,20 +21,19 @@ def clean_column_names(df):
 
 
 # =========================================================
-# AMOUNT CLEANING
+# CLEAN AMOUNT
 # =========================================================
 
 def clean_amount(value):
 
     if pd.isna(value):
-        return None
+        return 0.0
 
     value = str(value).strip()
 
     if value == "":
-        return None
+        return 0.0
 
-    # Remove currency symbols and commas
     value = (
         value
         .replace(",", "")
@@ -45,7 +43,6 @@ def clean_amount(value):
         .replace("£", "")
     )
 
-    # Keep numbers, decimal point and minus
     value = re.sub(
         r"[^\d.\-]",
         "",
@@ -54,27 +51,27 @@ def clean_amount(value):
 
     try:
         return float(value)
-
     except ValueError:
-        return None
+        return 0.0
 
 
 # =========================================================
-# MERCHANT NORMALIZATION
+# NORMALIZE MERCHANT
 # =========================================================
 
 def normalize_merchant(merchant):
 
-    merchant = str(
-        merchant
-    ).strip()
+    if pd.isna(merchant):
+        return "Unknown Merchant"
+
+    merchant = str(merchant).strip()
 
     if merchant == "":
         return "Unknown Merchant"
 
     upper = merchant.upper()
 
-    # Remove transaction/reference codes
+    # Remove reference numbers
     upper = re.sub(
         r"[*#@]\w+",
         "",
@@ -87,69 +84,50 @@ def normalize_merchant(merchant):
         upper
     )
 
-    # -----------------------------------------------------
-    # Known merchant aliases
-    # -----------------------------------------------------
-
     aliases = {
 
-        # Food
-        "SWG": "Swiggy",
         "SWIGGY": "Swiggy",
+        "SWG": "Swiggy",
 
-        "ZMT": "Zomato",
         "ZOMATO": "Zomato",
+        "ZMT": "Zomato",
 
-        "STRBKS": "Starbucks",
-        "STARBUCKS": "Starbucks",
-
-        "MCDONALD": "McDonald's",
-
-        "DOMINOS": "Dominos",
-
-        # Transport
         "UBER": "Uber",
-        "OLA CABS": "Ola",
+
         "OLA": "Ola",
 
-        "SHELL PETROL": "Shell",
-
-        # Shopping
         "AMZN": "Amazon",
         "AMAZON": "Amazon",
 
         "FLIPKART": "Flipkart",
 
-        "ZARA": "Zara",
-
-        # Subscriptions
-        "NFLX": "Netflix",
         "NETFLIX": "Netflix",
+        "NFLX": "Netflix",
 
         "SPOTIFY": "Spotify",
 
-        "APPLE.COM": "Apple",
+        "AIRTEL": "Airtel",
+
+        "JIO": "Jio",
+
+        "APOLLO PHARMACY": "Apollo Pharmacy",
+
+        "BOOKMYSHOW": "BookMyShow",
+
+        "PRIME VIDEO": "Prime Video",
+
+        "COURSERA": "Coursera",
+
+        "UDemy": "Udemy",
 
         "OPENAI": "OpenAI",
 
-        # Bills
-        "AIRTEL": "Airtel",
-
-        "BESCOM": "BESCOM",
-
-        # Grocery
-        "BLINKIT": "Blinkit",
-
-        "ZEPTO": "Zepto",
-
-        # Health
-        "APOLLO PHARMACY": "Apollo Pharmacy"
+        "APPLE": "Apple"
     }
 
     for key, value in aliases.items():
 
         if key in upper:
-
             return value
 
     upper = upper.strip()
@@ -161,22 +139,26 @@ def normalize_merchant(merchant):
 
 
 # =========================================================
-# DATE CLEANING
+# CLEAN DATES
 # =========================================================
 
 def clean_dates(df):
 
+    # IMPORTANT:
+    # Do NOT use dayfirst=True here.
+    # Your sample uses YYYY-MM-DD.
+
     df["Date"] = pd.to_datetime(
         df["Date"],
         errors="coerce",
-        dayfirst=True
+        format="mixed"
     )
 
     return df
 
 
 # =========================================================
-# MERCHANT CLEANING
+# CLEAN MERCHANTS
 # =========================================================
 
 def clean_merchants(df):
@@ -191,7 +173,7 @@ def clean_merchants(df):
 
 
 # =========================================================
-# AMOUNT CLEANING
+# CLEAN AMOUNTS
 # =========================================================
 
 def clean_amounts(df):
@@ -205,7 +187,7 @@ def clean_amounts(df):
 
 
 # =========================================================
-# CURRENCY
+# CLEAN CURRENCY
 # =========================================================
 
 def clean_currency(df):
@@ -222,40 +204,11 @@ def clean_currency(df):
         .str.strip()
     )
 
-    # Detect USD transactions from merchant description
-    if "Merchant" in df.columns:
-
-        for index in df.index:
-
-            merchant = str(
-                df.at[index, "Merchant"]
-            ).upper()
-
-            if (
-                "USD" in merchant
-                or "APPLE.COM/BILL" in merchant
-                or "OPENAI" in merchant
-            ):
-
-                # Only infer foreign currency where
-                # currency wasn't explicitly supplied
-                if df.at[index, "Currency"] == "INR":
-
-                    if (
-                        "APPLE" in merchant
-                        or "OPENAI" in merchant
-                    ):
-
-                        df.at[
-                            index,
-                            "Currency"
-                        ] = "USD"
-
     return df
 
 
 # =========================================================
-# MARKUP CLEANING
+# CLEAN MARKUP
 # =========================================================
 
 def clean_markup(df):
@@ -267,7 +220,6 @@ def clean_markup(df):
     df["Markup"] = (
         df["Markup"]
         .apply(clean_amount)
-        .fillna(0.0)
     )
 
     return df
@@ -291,136 +243,45 @@ def clean_transaction_type(df):
         .str.strip()
     )
 
-    # Credit/refund transactions become negative
+    # Refund / credit transactions
+    # are represented as negative amounts.
+
     for index in df.index:
 
         if df.at[index, "Type"] == "CR":
 
-            amount = df.at[
-                index,
-                "Amount"
-            ]
+            amount = df.at[index, "Amount"]
 
-            if (
-                amount is not None
-                and amount > 0
-            ):
+            if amount > 0:
 
-                df.at[
-                    index,
-                    "Amount"
-                ] = -amount
+                df.at[index, "Amount"] = -amount
 
     return df
 
 
 # =========================================================
-# MARKUP / IGST ROW DETECTION
-# =========================================================
-
-def is_markup_row(merchant):
-
-    merchant = str(
-        merchant
-    ).lower()
-
-    keywords = [
-
-        "markup",
-        "mark up",
-        "forex fee",
-        "foreign exchange fee",
-        "foreign exchange markup",
-        "fcy markup",
-        "currency conversion fee",
-        "igst on forex",
-        "igst on fcy",
-        "igst @"
-    ]
-
-    return any(
-        keyword in merchant
-        for keyword in keywords
-    )
-
-
-# =========================================================
-# COMBINE MARKUP AND IGST ROWS
-# =========================================================
-
-def combine_markup_rows(df):
-
-    df = df.copy()
-
-    if "Markup" not in df.columns:
-
-        df["Markup"] = 0.0
-
-    rows_to_remove = []
-
-    last_transaction_index = None
-
-    for index in df.index:
-
-        merchant = str(
-            df.at[index, "Merchant"]
-        )
-
-        amount = df.at[
-            index,
-            "Amount"
-        ]
-
-        if pd.isna(amount):
-
-            continue
-
-        # ---------------------------------------------
-        # Markup / IGST row
-        # ---------------------------------------------
-
-        if is_markup_row(merchant):
-
-            if last_transaction_index is not None:
-
-                df.at[
-                    last_transaction_index,
-                    "Markup"
-                ] += abs(float(amount))
-
-                rows_to_remove.append(index)
-
-            continue
-
-        # ---------------------------------------------
-        # Normal transaction
-        # ---------------------------------------------
-
-        last_transaction_index = index
-
-    df = df.drop(
-        rows_to_remove
-    )
-
-    return df.reset_index(
-        drop=True
-    )
-
-
-# =========================================================
-# MAIN CLEANING FUNCTION
+# MAIN CLEAN FUNCTION
 # =========================================================
 
 def clean_data(df):
 
+    # Make a copy
+    df = df.copy()
+
     # -----------------------------------------------------
-    # 1. Column names
+    # Count original rows
+    # -----------------------------------------------------
+
+    original_rows = len(df)
+
+    # -----------------------------------------------------
+    # Clean column names
     # -----------------------------------------------------
 
     df = clean_column_names(df)
 
     # -----------------------------------------------------
-    # 2. Check required columns
+    # Check required columns
     # -----------------------------------------------------
 
     missing = [
@@ -437,60 +298,35 @@ def clean_data(df):
         )
 
     # -----------------------------------------------------
-    # 3. Date
+    # Clean each column
     # -----------------------------------------------------
 
     df = clean_dates(df)
 
-    # -----------------------------------------------------
-    # 4. Merchant
-    # -----------------------------------------------------
-
     df = clean_merchants(df)
-
-    # -----------------------------------------------------
-    # 5. Amount
-    # -----------------------------------------------------
 
     df = clean_amounts(df)
 
-    # -----------------------------------------------------
-    # 6. Currency
-    # -----------------------------------------------------
-
     df = clean_currency(df)
 
-    # -----------------------------------------------------
-    # 7. Markup
-    # -----------------------------------------------------
-
     df = clean_markup(df)
-
-    # -----------------------------------------------------
-    # 8. Transaction type
-    # -----------------------------------------------------
 
     df = clean_transaction_type(df)
 
     # -----------------------------------------------------
-    # 9. Combine markup / IGST rows
+    # DO NOT DELETE TRANSACTIONS
     # -----------------------------------------------------
 
-    df = combine_markup_rows(df)
+    # Keep every row from the uploaded statement.
+    #
+    # If a date is invalid, keep the row.
+    # If an amount is invalid, it becomes 0.
+    #
+    # This prevents the cleaner from silently
+    # removing valid transactions.
 
     # -----------------------------------------------------
-    # 10. Remove invalid dates/amounts
-    # -----------------------------------------------------
-
-    df = df.dropna(
-        subset=[
-            "Date",
-            "Amount"
-        ]
-    )
-
-    # -----------------------------------------------------
-    # 11. Calculate total cost
+    # Calculate total cost
     # -----------------------------------------------------
 
     df["Total_Cost"] = (
@@ -498,6 +334,31 @@ def clean_data(df):
         + df["Markup"]
     )
 
-    return df.reset_index(
+    # -----------------------------------------------------
+    # Reset index
+    # -----------------------------------------------------
+
+    df = df.reset_index(
         drop=True
     )
+
+    # -----------------------------------------------------
+    # Store processing information
+    # -----------------------------------------------------
+
+    try:
+
+        import streamlit as st
+
+        st.session_state[
+            "original_count"
+        ] = original_rows
+
+        st.session_state[
+            "cleaned_count"
+        ] = len(df)
+
+    except Exception:
+        pass
+
+    return df

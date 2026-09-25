@@ -5,11 +5,11 @@ import plotly.express as px
 
 def display_dashboard(df):
 
-    # ========================================================
-    # PREPARE DATA
-    # ========================================================
-
     data = df.copy()
+
+    # =====================================================
+    # CLEAN DATA TYPES
+    # =====================================================
 
     data["Date"] = pd.to_datetime(
         data["Date"],
@@ -52,98 +52,115 @@ def display_dashboard(df):
         .str.upper()
     )
 
-
-    # ========================================================
-    # DASHBOARD TITLE
-    # ========================================================
+    # =====================================================
+    # TITLE
+    # =====================================================
 
     st.title("📊 Spending Dashboard")
 
-
-    # ========================================================
-    # CALCULATE METRICS
-    # ========================================================
-
-    total_spending = data["Total_Cost"].sum()
+    # =====================================================
+    # BASIC STATISTICS
+    # =====================================================
 
     transaction_count = len(data)
 
+    # INR transactions only for INR spending total
+    inr_data = data[
+        data["Currency"] == "INR"
+    ]
+
+    foreign_data = data[
+        data["Currency"] != "INR"
+    ]
+
+    total_inr_spending = inr_data[
+        "Total_Cost"
+    ].sum()
+
     average_transaction = (
-        data["Total_Cost"].mean()
+        data["Amount"].abs().mean()
         if transaction_count > 0
         else 0
     )
 
-    unique_merchants = data["Merchant"].nunique()
+    unique_merchants = (
+        data["Merchant"].nunique()
+    )
 
-    total_markup = data["Markup"].sum()
+    total_markup = data[
+        "Markup"
+    ].sum()
 
-    foreign_transactions = data[
-        data["Currency"] != "INR"
-    ]
+    foreign_count = len(
+        foreign_data
+    )
 
-    foreign_count = len(foreign_transactions)
-
-
-    # ========================================================
-    # KEY METRICS
-    # ========================================================
+    # =====================================================
+    # TOP METRICS
+    # =====================================================
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
+
         st.metric(
-            "Total Spending",
-            f"₹{total_spending:,.2f}"
+            "Total INR Spending",
+            f"₹{total_inr_spending:,.2f}"
         )
 
     with col2:
+
         st.metric(
             "Transactions",
             transaction_count
         )
 
     with col3:
+
         st.metric(
             "Average Transaction",
             f"₹{average_transaction:,.2f}"
         )
 
     with col4:
+
         st.metric(
             "Unique Merchants",
             unique_merchants
         )
 
-
-    # ========================================================
-    # SECOND METRIC ROW
-    # ========================================================
+    # =====================================================
+    # MARKUP + FOREIGN TRANSACTIONS
+    # =====================================================
 
     col1, col2 = st.columns(2)
 
     with col1:
+
         st.metric(
             "Total Markup",
             f"₹{total_markup:,.2f}"
         )
 
     with col2:
+
         st.metric(
             "Foreign Currency Transactions",
             foreign_count
         )
 
-
-    # ========================================================
+    # =====================================================
     # SPENDING BY CATEGORY
-    # ========================================================
+    # =====================================================
 
-    st.subheader("🏷️ Spending by Category")
+    st.subheader(
+        "🏷️ Spending by Category"
+    )
 
     category_data = (
-        data
-        .groupby("Category", as_index=False)["Total_Cost"]
+        inr_data
+        .groupby("Category", as_index=False)
+        ["Total_Cost"]
         .sum()
         .sort_values(
             "Total_Cost",
@@ -166,18 +183,32 @@ def display_dashboard(df):
             use_container_width=True
         )
 
-
-    # ========================================================
+    # =====================================================
     # MONTHLY SPENDING
-    # ========================================================
+    # =====================================================
 
-    st.subheader("📅 Monthly Spending")
+    st.subheader(
+        "📅 Monthly Spending"
+    )
 
-    data["Month"] = data["Date"].dt.strftime("%Y-%m")
+    data["Month"] = (
+        data["Date"]
+        .dt.strftime("%Y-%m")
+    )
 
     monthly_data = (
-        data
-        .groupby("Month", as_index=False)["Total_Cost"]
+        inr_data.copy()
+    )
+
+    monthly_data["Month"] = (
+        monthly_data["Date"]
+        .dt.strftime("%Y-%m")
+    )
+
+    monthly_data = (
+        monthly_data
+        .groupby("Month", as_index=False)
+        ["Total_Cost"]
         .sum()
     )
 
@@ -199,19 +230,26 @@ def display_dashboard(df):
             use_container_width=True
         )
 
+    # =====================================================
+    # MERCHANT SPENDING
+    # =====================================================
 
-    # ========================================================
-    # MERCHANT REPORT
-    # ========================================================
-
-    st.subheader("🏪 Merchant Spending")
+    st.subheader(
+        "🏪 Merchant Spending"
+    )
 
     merchant_data = (
         data
         .groupby("Merchant")
         .agg(
-            Transactions=("Merchant", "count"),
-            Total_Spending=("Total_Cost", "sum")
+            Transactions=(
+                "Merchant",
+                "count"
+            ),
+            Total_Spending=(
+                "Total_Cost",
+                "sum"
+            )
         )
         .reset_index()
         .sort_values(
@@ -226,31 +264,42 @@ def display_dashboard(df):
         hide_index=True
     )
 
-
-    # ========================================================
+    # =====================================================
     # RECURRING PAYMENTS
-    # ========================================================
+    # =====================================================
 
-    st.subheader("🔄 Possible Recurring Payments")
+    st.subheader(
+        "🔄 Possible Recurring Payments"
+    )
 
     recurring_data = (
         data
         .groupby("Merchant")
         .agg(
-            Occurrences=("Merchant", "count"),
-            Average_Amount=("Total_Cost", "mean"),
-            Total_Amount=("Total_Cost", "sum")
+            Occurrences=(
+                "Merchant",
+                "count"
+            ),
+            Average_Amount=(
+                "Amount",
+                "mean"
+            ),
+            Total_Amount=(
+                "Amount",
+                "sum"
+            )
         )
         .reset_index()
     )
 
-    recurring_data = recurring_data[
-        recurring_data["Occurrences"] >= 2
-    ]
-
-    recurring_data = recurring_data.sort_values(
-        "Occurrences",
-        ascending=False
+    recurring_data = (
+        recurring_data[
+            recurring_data["Occurrences"] >= 2
+        ]
+        .sort_values(
+            "Occurrences",
+            ascending=False
+        )
     )
 
     if recurring_data.empty:
@@ -267,14 +316,15 @@ def display_dashboard(df):
             hide_index=True
         )
 
-
-    # ========================================================
+    # =====================================================
     # FOREIGN CURRENCY
-    # ========================================================
+    # =====================================================
 
-    st.subheader("🌍 Foreign Currency Transactions")
+    st.subheader(
+        "🌍 Foreign Currency Transactions"
+    )
 
-    if foreign_transactions.empty:
+    if foreign_data.empty:
 
         st.info(
             "No foreign currency transactions found."
@@ -283,14 +333,13 @@ def display_dashboard(df):
     else:
 
         st.dataframe(
-            foreign_transactions[
+            foreign_data[
                 [
                     "Date",
                     "Merchant",
                     "Amount",
                     "Currency",
                     "Markup",
-                    "Total_Cost",
                     "Category"
                 ]
             ],
@@ -298,12 +347,18 @@ def display_dashboard(df):
             hide_index=True
         )
 
+        st.caption(
+            "Foreign transaction amounts are shown "
+            "in their original currency. Markup is shown separately in INR."
+        )
 
-    # ========================================================
-    # CLEANED TRANSACTIONS
-    # ========================================================
+    # =====================================================
+    # ALL CLEANED TRANSACTIONS
+    # =====================================================
 
-    st.subheader("📋 Cleaned Transactions")
+    st.subheader(
+        "📋 Cleaned Transactions"
+    )
 
     st.dataframe(
         data[
@@ -321,16 +376,19 @@ def display_dashboard(df):
         hide_index=True
     )
 
-
-    # ========================================================
+    # =====================================================
     # DOWNLOAD REPORT
-    # ========================================================
+    # =====================================================
 
-    st.subheader("⬇️ Download Report")
+    st.subheader(
+        "⬇️ Download Report"
+    )
 
-    csv_data = data.to_csv(
-        index=False
-    ).encode("utf-8")
+    csv_data = (
+        data
+        .to_csv(index=False)
+        .encode("utf-8")
+    )
 
     st.download_button(
         label="📥 Download Cleaned CSV",
