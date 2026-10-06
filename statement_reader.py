@@ -9,51 +9,7 @@ import pdfplumber
 # =========================================================
 
 def read_csv(file):
-
-    try:
-        df = pd.read_csv(file)
-
-        if df.empty:
-            raise ValueError("The CSV file is empty.")
-
-        return df
-
-    except Exception as e:
-        raise ValueError(f"Unable to read CSV file: {e}")
-
-
-# =========================================================
-# PDF TABLE READER
-# =========================================================
-
-def extract_pdf_tables(file):
-
-    tables_data = []
-
-    file_bytes = file.getvalue()
-
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-
-        for page in pdf.pages:
-
-            tables = page.extract_tables()
-
-            for table in tables:
-
-                if not table:
-                    continue
-
-                for row in table:
-
-                    if row:
-                        cleaned_row = [
-                            str(cell).strip() if cell is not None else ""
-                            for cell in row
-                        ]
-
-                        tables_data.append(cleaned_row)
-
-    return tables_data
+    return pd.read_csv(file)
 
 
 # =========================================================
@@ -61,12 +17,12 @@ def extract_pdf_tables(file):
 # =========================================================
 
 def find_header_row(rows):
-
     for index, row in enumerate(rows):
 
         text = " ".join(
-            str(cell).lower()
-            for cell in row
+            str(value).lower()
+            for value in row
+            if value is not None
         )
 
         if (
@@ -84,44 +40,46 @@ def find_header_row(rows):
 
 
 # =========================================================
-# CONVERT TABLE TO DATAFRAME
+# TABLE ROWS TO DATAFRAME
 # =========================================================
 
-def table_rows_to_dataframe(rows):
+def table_rows_to_dataframe(table):
 
-    if not rows:
-        return None
+    if not table:
+        return pd.DataFrame()
 
-    header_index = find_header_row(rows)
+    header_index = find_header_row(table)
 
     if header_index is None:
-        return None
+        return pd.DataFrame()
 
-    headers = rows[header_index]
+    header = table[header_index]
+    data = table[header_index + 1:]
 
-    data_rows = rows[header_index + 1:]
+    cleaned_header = []
 
-    if not data_rows:
-        return None
+    for column in header:
 
-    max_columns = len(headers)
+        if column is None:
+            cleaned_header.append("")
+        else:
+            cleaned_header.append(
+                str(column).strip()
+            )
 
-    cleaned_rows = []
+    # Remove completely empty column names
+    for i, column in enumerate(cleaned_header):
 
-    for row in data_rows:
+        if column == "":
+            cleaned_header[i] = f"Column_{i}"
 
-        if len(row) < max_columns:
-            row = row + [""] * (max_columns - len(row))
-
-        elif len(row) > max_columns:
-            row = row[:max_columns]
-
-        cleaned_rows.append(row)
-
-    df = pd.DataFrame(
-        cleaned_rows,
-        columns=headers
-    )
+    try:
+        df = pd.DataFrame(
+            data,
+            columns=cleaned_header
+        )
+    except Exception:
+        return pd.DataFrame()
 
     return df
 
@@ -132,102 +90,440 @@ def table_rows_to_dataframe(rows):
 
 def standardize_pdf_columns(df):
 
-    if df is None or df.empty:
-        return None
+    if df.empty:
+        return df
 
-    # Clean column names
-    df.columns = [
-        str(column).strip()
-        for column in df.columns
-    ]
-
-    column_mapping = {}
+    new_columns = {}
 
     for column in df.columns:
 
-        lower = column.lower().strip()
+        name = str(column).strip().lower()
 
-        # Date
-        if lower in [
+        if name in [
             "date",
             "transaction date",
-            "txn date",
-            "trans date",
-            "posting date"
+            "txn date"
         ]:
-            column_mapping[column] = "Date"
+            new_columns[column] = "Date"
 
-        # Merchant / description
-        elif lower in [
-            "merchant",
+        elif name in [
+            "transaction details",
+            "transaction detail",
             "description",
-            "transaction",
-            "transaction description",
-            "merchant description",
-            "details",
-            "particulars"
+            "merchant",
+            "details"
         ]:
-            column_mapping[column] = "Merchant"
+            new_columns[column] = "Merchant"
 
-        # Amount
-        elif lower in [
+        elif name in [
             "amount",
+            "amount (inr)",
+            "amount(inr)",
             "transaction amount",
-            "txn amount",
             "debit",
-            "purchase amount",
-            "transaction value"
+            "credit"
         ]:
-            column_mapping[column] = "Amount"
+            new_columns[column] = "Amount"
 
-        # Currency
-        elif lower in [
+        elif name in [
             "currency",
-            "curr",
-            "currency code"
+            "curr"
         ]:
-            column_mapping[column] = "Currency"
+            new_columns[column] = "Currency"
 
-        # Markup
-        elif lower in [
+        elif name in [
             "markup",
-            "mark up",
-            "forex markup",
-            "foreign exchange markup"
+            "foreign markup"
         ]:
-            column_mapping[column] = "Markup"
+            new_columns[column] = "Markup"
+
+        elif name in [
+            "type",
+            "transaction type",
+            "dr/cr"
+        ]:
+            new_columns[column] = "Type"
 
     df = df.rename(
-        columns=column_mapping
+        columns=new_columns
     )
 
     return df
 
 
 # =========================================================
-# PDF TEXT EXTRACTION
+# DETECT CURRENCY
+# =========================================================
+
+def detect_currency(merchant):
+
+    text = str(merchant).upper()
+
+    # USD
+    if re.search(r"\bUSD\b", text):
+        return "USD"
+
+    # EUR
+    if re.search(r"\bEUR\b", text):
+        return "EUR"
+
+    # GBP
+    if re.search(r"\bGBP\b", text):
+        return "GBP"
+
+    # AED
+    if re.search(r"\bAED\b", text):
+        return "AED"
+
+    # SGD
+    if re.search(r"\bSGD\b", text):
+        return "SGD"
+
+    # AUD
+    if re.search(r"\bAUD\b", text):
+        return "AUD"
+
+    # CAD
+    if re.search(r"\bCAD\b", text):
+        return "CAD"
+
+    # JPY
+    if re.search(r"\bJPY\b", text):
+        return "JPY"
+
+    # Default
+    return "INR"
+
+
+# =========================================================
+# DETECT TRANSACTION TYPE
+# =========================================================
+
+def detect_type(merchant):
+
+    text = str(merchant).upper()
+
+    if re.search(r"\bCR\b", text):
+        return "CR"
+
+    return "DR"
+
+
+# =========================================================
+# CLEAN PDF DATAFRAME
+# =========================================================
+
+def clean_pdf_dataframe(df):
+
+    if df.empty:
+        return df
+
+    # Standardize columns
+    df = standardize_pdf_columns(df)
+
+    # Required columns
+    if "Date" not in df.columns:
+        return pd.DataFrame()
+
+    if "Merchant" not in df.columns:
+        return pd.DataFrame()
+
+    if "Amount" not in df.columns:
+        return pd.DataFrame()
+
+    # -----------------------------------------------------
+    # DATE
+    # -----------------------------------------------------
+
+    df["Date"] = pd.to_datetime(
+        df["Date"],
+        errors="coerce",
+        dayfirst=True
+    )
+
+    # -----------------------------------------------------
+    # MERCHANT
+    # -----------------------------------------------------
+
+    df["Merchant"] = (
+        df["Merchant"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    # -----------------------------------------------------
+    # AMOUNT
+    # -----------------------------------------------------
+
+    df["Amount"] = (
+        df["Amount"]
+        .astype(str)
+        .str.replace(",", "", regex=False)
+        .str.replace("₹", "", regex=False)
+        .str.replace("$", "", regex=False)
+        .str.strip()
+    )
+
+    df["Amount"] = pd.to_numeric(
+        df["Amount"],
+        errors="coerce"
+    )
+
+    # -----------------------------------------------------
+    # CURRENCY
+    # -----------------------------------------------------
+
+    if "Currency" not in df.columns:
+
+        df["Currency"] = df["Merchant"].apply(
+            detect_currency
+        )
+
+    else:
+
+        df["Currency"] = df.apply(
+            lambda row: (
+                detect_currency(
+                    row["Merchant"]
+                )
+                if str(
+                    row["Currency"]
+                ).strip() == ""
+                else str(
+                    row["Currency"]
+                ).upper().strip()
+            ),
+            axis=1
+        )
+
+    # -----------------------------------------------------
+    # TRANSACTION TYPE
+    # -----------------------------------------------------
+
+    if "Type" not in df.columns:
+
+        df["Type"] = df["Merchant"].apply(
+            detect_type
+        )
+
+    else:
+
+        df["Type"] = (
+            df["Type"]
+            .fillna("DR")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    # -----------------------------------------------------
+    # MARKUP
+    # -----------------------------------------------------
+
+    if "Markup" not in df.columns:
+
+        df["Markup"] = 0.0
+
+    else:
+
+        df["Markup"] = (
+            df["Markup"]
+            .astype(str)
+            .str.replace(
+                ",",
+                "",
+                regex=False
+            )
+            .str.replace(
+                "₹",
+                "",
+                regex=False
+            )
+        )
+
+        df["Markup"] = pd.to_numeric(
+            df["Markup"],
+            errors="coerce"
+        ).fillna(0.0)
+
+    # -----------------------------------------------------
+    # REFUNDS
+    # -----------------------------------------------------
+
+    for index in df.index:
+
+        merchant = str(
+            df.at[index, "Merchant"]
+        ).upper()
+
+        transaction_type = str(
+            df.at[index, "Type"]
+        ).upper()
+
+        # Credit transaction
+        if transaction_type == "CR":
+
+            amount = df.at[
+                index,
+                "Amount"
+            ]
+
+            if (
+                pd.notna(amount)
+                and amount > 0
+            ):
+                df.at[
+                    index,
+                    "Amount"
+                ] = -amount
+
+        # Refund mentioned in description
+        elif "REFUND" in merchant:
+
+            amount = df.at[
+                index,
+                "Amount"
+            ]
+
+            if (
+                pd.notna(amount)
+                and amount > 0
+            ):
+                df.at[
+                    index,
+                    "Amount"
+                ] = -amount
+
+            df.at[
+                index,
+                "Type"
+            ] = "CR"
+
+    # -----------------------------------------------------
+    # MARKUP / FOREX / IGST ARE INR
+    # -----------------------------------------------------
+
+    for index in df.index:
+
+        merchant = str(
+            df.at[index, "Merchant"]
+        ).upper()
+
+        if (
+            "MARKUP" in merchant
+            or "FCY" in merchant
+            or "FOREX" in merchant
+            or "IGST" in merchant
+        ):
+
+            df.at[
+                index,
+                "Currency"
+            ] = "INR"
+
+    # -----------------------------------------------------
+    # REMOVE INVALID ROWS
+    # -----------------------------------------------------
+
+    df = df.dropna(
+        subset=[
+            "Date",
+            "Amount"
+        ]
+    )
+
+    df = df.reset_index(
+        drop=True
+    )
+
+    return df
+
+
+# =========================================================
+# EXTRACT PDF TABLES
+# =========================================================
+
+def extract_pdf_tables(file):
+
+    try:
+
+        file_bytes = file.getvalue()
+
+        tables = []
+
+        with pdfplumber.open(
+            io.BytesIO(file_bytes)
+        ) as pdf:
+
+            for page in pdf.pages:
+
+                page_tables = (
+                    page.extract_tables()
+                )
+
+                for table in page_tables:
+
+                    df = (
+                        table_rows_to_dataframe(
+                            table
+                        )
+                    )
+
+                    if not df.empty:
+                        tables.append(df)
+
+        if not tables:
+            return pd.DataFrame()
+
+        combined = pd.concat(
+            tables,
+            ignore_index=True
+        )
+
+        combined = clean_pdf_dataframe(
+            combined
+        )
+
+        return combined
+
+    except Exception:
+
+        return pd.DataFrame()
+
+
+# =========================================================
+# EXTRACT PDF TEXT
 # =========================================================
 
 def extract_pdf_text(file):
 
-    text = ""
-
     file_bytes = file.getvalue()
 
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+    text_parts = []
+
+    with pdfplumber.open(
+        io.BytesIO(file_bytes)
+    ) as pdf:
 
         for page in pdf.pages:
 
-            page_text = page.extract_text()
+            page_text = (
+                page.extract_text()
+            )
 
             if page_text:
-                text += "\n" + page_text
+                text_parts.append(
+                    page_text
+                )
 
-    return text
+    return "\n".join(
+        text_parts
+    )
 
 
 # =========================================================
-# TEXT TRANSACTION EXTRACTION
+# PARSE PDF TEXT
 # =========================================================
 
 def parse_pdf_text(text):
@@ -239,182 +535,283 @@ def parse_pdf_text(text):
 
     lines = text.splitlines()
 
+    # Example:
+    #
+    # 15/02/2026 APPLE.COM/BILL USD 19.99 @ 84.50 1,689.15 DR
+    #
+    # 20/02/2026 OPENAI *CHATGPT SUBSCRIPTION USD 20.00 1,690.00 DR
+
+    date_pattern = re.compile(
+        r"^(\d{2}[/-]\d{2}[/-]\d{4})\s+(.*)$"
+    )
+
     for line in lines:
 
         line = line.strip()
 
-        if not line:
-            continue
-
-        # -------------------------------------------------
-        # DATE PATTERNS
-        # -------------------------------------------------
-
-        date_match = re.match(
-            r"^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(.*)",
+        match = date_pattern.match(
             line
         )
 
-        if not date_match:
+        if not match:
+            continue
 
-            date_match = re.match(
-                r"^(\d{4}[/-]\d{1,2}[/-]\d{1,2})\s+(.*)",
-                line
+        date_text = match.group(1)
+
+        transaction_text = (
+            match.group(2).strip()
+        )
+
+        # -------------------------------------------------
+        # TRANSACTION TYPE
+        # -------------------------------------------------
+
+        transaction_type = "DR"
+
+        if re.search(
+            r"\sCR$",
+            transaction_text,
+            re.IGNORECASE
+        ):
+
+            transaction_type = "CR"
+
+            transaction_text = re.sub(
+                r"\sCR$",
+                "",
+                transaction_text,
+                flags=re.IGNORECASE
+            ).strip()
+
+        elif re.search(
+            r"\sDR$",
+            transaction_text,
+            re.IGNORECASE
+        ):
+
+            transaction_text = re.sub(
+                r"\sDR$",
+                "",
+                transaction_text,
+                flags=re.IGNORECASE
+            ).strip()
+
+        # -------------------------------------------------
+        # DETECT CURRENCY
+        # -------------------------------------------------
+
+        currency = detect_currency(
+            transaction_text
+        )
+
+        # -------------------------------------------------
+        # FIND MONEY VALUES
+        # -------------------------------------------------
+
+        money_values = re.findall(
+            r"(?<!\d)\d[\d,]*\.\d{2}(?!\d)",
+            transaction_text
+        )
+
+        if not money_values:
+            continue
+
+        # Last amount is the INR transaction value
+        amount_text = money_values[-1]
+
+        amount = float(
+            amount_text.replace(
+                ",",
+                ""
+            )
+        )
+
+        # -------------------------------------------------
+        # REFUND
+        # -------------------------------------------------
+
+        if transaction_type == "CR":
+
+            amount = -abs(
+                amount
             )
 
-        if not date_match:
-            continue
+        if (
+            "REFUND"
+            in transaction_text.upper()
+            and amount > 0
+        ):
 
-        date_value = date_match.group(1)
-        remaining = date_match.group(2).strip()
+            amount = -amount
+
+            transaction_type = "CR"
 
         # -------------------------------------------------
-        # FIND MONEY VALUE AT END OF LINE
+        # MARKUP / FOREX / IGST
         # -------------------------------------------------
 
-        amount_matches = re.findall(
-            r"(?:₹|\$|€|£)?\s*-?\d[\d,]*(?:\.\d{1,2})?",
-            remaining
+        upper_text = (
+            transaction_text.upper()
         )
 
-        if not amount_matches:
-            continue
+        if (
+            "MARKUP" in upper_text
+            or "FCY" in upper_text
+            or "FOREX" in upper_text
+            or "IGST" in upper_text
+        ):
 
-        amount_text = amount_matches[-1]
-
-        amount_clean = (
-            amount_text
-            .replace("₹", "")
-            .replace("$", "")
-            .replace("€", "")
-            .replace("£", "")
-            .replace(",", "")
-            .strip()
-        )
-
-        try:
-            amount = float(amount_clean)
-        except ValueError:
-            continue
+            currency = "INR"
 
         # -------------------------------------------------
-        # MERCHANT
+        # ADD ROW
         # -------------------------------------------------
-
-        merchant = remaining
-
-        # Remove final amount
-        merchant = merchant.rsplit(
-            amount_text,
-            1
-        )[0].strip()
-
-        # Remove common trailing balance
-        merchant = re.sub(
-            r"\s+\d[\d,]*\.\d{2}$",
-            "",
-            merchant
-        ).strip()
-
-        if merchant == "":
-            merchant = "Unknown Merchant"
 
         rows.append(
             {
-                "Date": date_value,
-                "Merchant": merchant,
+                "Date": date_text,
+                "Merchant": transaction_text,
                 "Amount": amount,
-                "Currency": "INR",
-                "Markup": 0
+                "Currency": currency,
+                "Markup": 0.0,
+                "Type": transaction_type
             }
         )
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(
+        rows
+    )
+
+    if df.empty:
+        return df
+
+    return clean_pdf_dataframe(
+        df
+    )
 
 
 # =========================================================
-# PDF READER
+# READ PDF
 # =========================================================
 
 def read_pdf(file):
 
     # -----------------------------------------------------
-    # STEP 1: TRY TABLE EXTRACTION
+    # FIRST TRY TABLE EXTRACTION
     # -----------------------------------------------------
 
-    try:
+    df = extract_pdf_tables(
+        file
+    )
 
-        table_rows = extract_pdf_tables(file)
+    if not df.empty:
 
-        if table_rows:
+        # Make sure currency is detected
+        if "Currency" not in df.columns:
 
-            df = table_rows_to_dataframe(
-                table_rows
+            df["Currency"] = (
+                df["Merchant"]
+                .apply(
+                    detect_currency
+                )
             )
 
-            if df is not None and not df.empty:
+        else:
 
-                df = standardize_pdf_columns(df)
+            df["Currency"] = df.apply(
+                lambda row: (
+                    detect_currency(
+                        row["Merchant"]
+                    )
+                    if str(
+                        row["Currency"]
+                    ).strip() == ""
+                    else str(
+                        row["Currency"]
+                    ).upper().strip()
+                ),
+                axis=1
+            )
 
-                # If required transaction columns exist
-                if (
-                    "Date" in df.columns
-                    and "Merchant" in df.columns
-                    and "Amount" in df.columns
-                ):
+        # Force forex/markup/IGST rows to INR
+        for index in df.index:
 
-                    if "Currency" not in df.columns:
-                        df["Currency"] = "INR"
+            merchant = str(
+                df.at[
+                    index,
+                    "Merchant"
+                ]
+            ).upper()
 
-                    if "Markup" not in df.columns:
-                        df["Markup"] = 0
+            if (
+                "MARKUP" in merchant
+                or "FCY" in merchant
+                or "FOREX" in merchant
+                or "IGST" in merchant
+            ):
 
-                    return df
+                df.at[
+                    index,
+                    "Currency"
+                ] = "INR"
 
-    except Exception:
-        pass
+        return clean_pdf_dataframe(
+            df
+        )
 
     # -----------------------------------------------------
-    # STEP 2: FALL BACK TO TEXT EXTRACTION
+    # TABLE EXTRACTION FAILED
+    # USE TEXT EXTRACTION
     # -----------------------------------------------------
 
-    text = extract_pdf_text(file)
+    text = extract_pdf_text(
+        file
+    )
 
-    df = parse_pdf_text(text)
+    df = parse_pdf_text(
+        text
+    )
 
     if df.empty:
 
         raise ValueError(
-            "No transactions could be extracted from this PDF. "
-            "The PDF may be scanned/image-based or use an unsupported layout."
+            "No transactions were found in the PDF."
         )
 
     return df
 
 
 # =========================================================
-# MAIN FILE READER
+# READ STATEMENT
 # =========================================================
 
 def read_statement(file):
 
-    if file is None:
-        raise ValueError("No file was uploaded.")
+    filename = getattr(
+        file,
+        "name",
+        ""
+    ).lower()
 
-    filename = file.name.lower()
+    if filename.endswith(
+        ".csv"
+    ):
 
-    # CSV
-    if filename.endswith(".csv"):
+        return read_csv(
+            file
+        )
 
-        return read_csv(file)
+    elif filename.endswith(
+        ".pdf"
+    ):
 
-    # PDF
-    elif filename.endswith(".pdf"):
-
-        return read_pdf(file)
+        return read_pdf(
+            file
+        )
 
     else:
 
         raise ValueError(
-            "Unsupported file type. Please upload a CSV or PDF file."
+            "Unsupported file type. "
+            "Please upload a CSV or PDF."
         )
